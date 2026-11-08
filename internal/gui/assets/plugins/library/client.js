@@ -23,6 +23,8 @@ magpie.plugin("library", (ctx) => {
   let addingSet = false; // a new set being named
   let removingSet = null; // a set whose Remove was clicked once
   const extras = {};     // agent → its own additions as typed, while not saved
+  const defaultMarkers = { begin: "<!-- magpie:begin · written by magpie from its Library -->", end: "<!-- magpie:end -->" };
+  let markerDraft = null;
   const open = new Set(); // agents whose instructions row is open
   let probe = null;      // skills found at a source: { source, candidates, pick:Set, agents:Set }
   let probing = false;
@@ -1331,11 +1333,13 @@ magpie.plugin("library", (ctx) => {
   }
   function dirty() {
     if (Object.keys(unsavedTexts()).length) return true;
+    if (markersDirty()) return true;
     return Object.entries(extras).some(([id, v]) => v !== (lib.instructions.agents.find((a) => a.agent === id)?.extra || ""));
   }
 
   async function saveInstructions() {
     const c = {};
+    if (markersDirty()) c.markers = { ...markerDraft };
     const tx = unsavedTexts();
     if (Object.keys(tx).length) c.texts = tx;
     const ex = {};
@@ -1343,6 +1347,7 @@ magpie.plugin("library", (ctx) => {
     if (Object.keys(ex).length) c.extra = ex;
     if (!Object.keys(c).length) return;
     if (await change("instructions/save", c)) {
+      markerDraft = null;
       for (const k of Object.keys(texts)) delete texts[k];
       for (const k of Object.keys(extras)) delete extras[k];
       render();
@@ -1352,6 +1357,7 @@ magpie.plugin("library", (ctx) => {
     if (force !== true && dirty() && !(await confirmDiscard())) return;
     for (const k of Object.keys(texts)) delete texts[k];
     for (const k of Object.keys(extras)) delete extras[k];
+    markerDraft = null;
     render();
   }
 
@@ -1396,7 +1402,40 @@ magpie.plugin("library", (ctx) => {
     const skip = shownAgents().filter((a) => !a.instructions && !a.asleep);
     if (skip.length) body.append(el("p", "lib-aside", t(skip.length > 1 ? "{agents} keep no user-wide instructions file." : "{agents} keeps no user-wide instructions file.", { agents: skip.map((a) => a.name).join(", ") })));
     body.append(...asleepAsides(rows.filter((a) => a.asleep)));
+    renderInstructionMarkers(body);
     body.append(bar);
+  }
+
+  function markersDirty() {
+    const saved = iv()?.markers || defaultMarkers;
+    return markerDraft && (markerDraft.begin !== saved.begin || markerDraft.end !== saved.end);
+  }
+
+  function renderInstructionMarkers(body) {
+    const card = el("div", "lib-detail lib-instruction-markers");
+    card.append(el("b", "", t("Instruction block markers")));
+    card.append(el("p", "lib-aside", t("Two distinct HTML comment lines surround the shared text and agent additions. Saving replaces the previous markers and keeps text outside the block.")));
+    const markers = markerDraft || iv().markers || defaultMarkers;
+    for (const [key, label] of [["begin", "Beginning marker"], ["end", "Ending marker"]]) {
+      const lab = el("label", "lib-lab", t(label));
+      const field = input(markers[key], "");
+      field.dataset.lib = "marker:" + key;
+      field.maxLength = 512;
+      field.spellcheck = false;
+      field.style.width = "100%";
+      field.oninput = () => {
+        markerDraft = { ...(markerDraft || iv().markers || defaultMarkers), [key]: field.value };
+        renderSaveBars();
+      };
+      field.onkeydown = (e) => {
+        e.stopPropagation();
+        if ((e.metaKey || e.ctrlKey) && e.key === "s") { e.preventDefault(); saveInstructions(); }
+      };
+      lab.append(field);
+      card.append(lab);
+    }
+    card.append(button(t("Restore default markers"), "action", () => { markerDraft = { ...defaultMarkers }; render(); }));
+    body.append(card);
   }
 
   function setRow(x) {

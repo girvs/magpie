@@ -86,7 +86,7 @@ func Collect() (*Bundle, error) {
 		b.Instructions.Sets[i].File = ""
 	}
 	for _, s := range l.sets() {
-		if text := setText(l.textPath(s.ID)); text != "" {
+		if text := l.setText(l.textPath(s.ID)); text != "" {
 			b.Texts[s.ID] = text
 		}
 	}
@@ -216,6 +216,16 @@ func readSkills(dirs []string) []*CarriedSkill {
 // check refuses a bundle that would write outside the library: a name
 // that isn't one, a file's path that climbs out of its skill.
 func (b *Bundle) check() error {
+	if err := b.Instructions.Markers.check(); err != nil {
+		return err
+	}
+	for _, texts := range []map[string]string{b.Texts, b.Extra} {
+		for _, text := range texts {
+			if err := b.Instructions.Markers.effective().checkText(text); err != nil {
+				return err
+			}
+		}
+	}
 	for _, s := range b.Instructions.Sets {
 		if err := checkName("set", s.ID); err != nil {
 			return err
@@ -390,6 +400,9 @@ func Put(b *Bundle) (*Result, error) {
 		return nil, err
 	}
 	return change(func(l *Library) error {
+		if err := l.checkMarkerFiles(b.Instructions.Markers.effective(), b.Instructions.Agents); err != nil {
+			return err
+		}
 		if err := os.MkdirAll(skillsDir(), 0o755); err != nil {
 			return err
 		}
@@ -509,7 +522,7 @@ func Put(b *Bundle) (*Result, error) {
 			}
 		}
 		l.Instructions = Instructions{Agents: slices.Sorted(slices.Values(orNone(b.Instructions.Agents))),
-			Sets: slices.Clone(b.Instructions.Sets), Active: b.Instructions.Active}
+			Sets: slices.Clone(b.Instructions.Sets), Active: b.Instructions.Active, Markers: b.Instructions.Markers}
 		for i := range l.Instructions.Sets {
 			s := &l.Instructions.Sets[i]
 			s.File = files[s.ID]

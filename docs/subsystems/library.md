@@ -11,6 +11,27 @@ agents RTK, a CLI that cuts shell output down before the model reads it.
 
 ## Responsibilities and sources of truth
 
+Instruction text and block markers are edited together on the Instructions
+page. The active set supplies the shared Markdown; an agent's extra text is
+appended inside the same block. `Instructions.Markers` optionally replaces
+both HTML comment lines for every agent switched on. Each must be a distinct,
+nonempty single comment line of at most 512 bytes; an omitted field keeps the
+current setting and an empty pair restores the original markers.
+`InstructionsView.Markers` returns the effective pair.
+
+`Applied.InstrMarkers` keeps each agent's last written pair until its next
+successful sync, including agents in stopped WSL distros. Sync recognizes
+the original, current and still-applied pairs, replaces the existing block
+in place and backs up the file first. A marker-only change preserves manual
+edits inside the block; a later library text change replaces them as before.
+Marker lines must not occur in instruction text or collide with an agent's
+personal text. Invalid changes are refused before instruction files are
+written. Backup and setup sync carry the marker setting in `Instructions`,
+while each machine retains its own `Applied` record.
+See [`instruction_markers.go`](../../internal/library/instruction_markers.go),
+`syncInstructions` in [`instructions.go`](../../internal/library/instructions.go)
+and [`instruction_markers_test.go`](../../internal/library/instruction_markers_test.go).
+
 | Part | Responsibility | Source |
 | --- | --- | --- |
 | library.json | `Library` holds the instruction sets, the MCP servers, the skills, the projects, skill groups and copy settings. `Applied` records what magpie last wrote into each agent, so it only ever takes away its own. The instruction texts and skill folders live under `Dir` (`library/` in magpie's config folder). | [`library.go`](../../internal/library/library.go) |

@@ -21,16 +21,17 @@ type Setup struct {
 // SetupInstructions is the shared text, the agents it is written to, and
 // what each agent gets besides.
 type SetupInstructions struct {
-	Set    string            `json:"set,omitempty"` // the set it is the text of
-	Shared string            `json:"shared,omitempty"`
-	Agents []string          `json:"agents"`
-	Extra  map[string]string `json:"extra,omitempty"`
+	Markers *InstructionMarkers `json:"markers,omitempty"`
+	Set     string              `json:"set,omitempty"` // the set it is the text of
+	Shared  string              `json:"shared,omitempty"`
+	Agents  []string            `json:"agents"`
+	Extra   map[string]string   `json:"extra,omitempty"`
 }
 
 // Empty reports whether the library had nothing in it when s was taken.
 func (s *Setup) Empty() bool {
 	i := s.Instructions
-	return len(s.MCP) == 0 && len(s.Skills) == 0 && i.Shared == "" && len(i.Agents) == 0 && len(i.Extra) == 0
+	return len(s.MCP) == 0 && len(s.Skills) == 0 && i.Shared == "" && len(i.Agents) == 0 && len(i.Extra) == 0 && i.Markers == nil
 }
 
 // Summary is what a setup gives out, in a few words: the servers and
@@ -121,7 +122,7 @@ func Snapshot() (*Setup, error) {
 		return nil, err
 	}
 	s := &Setup{
-		Instructions: SetupInstructions{Set: l.active(), Shared: setText(l.sharedPath()), Agents: slices.Clone(l.Instructions.Agents), Extra: extras()},
+		Instructions: SetupInstructions{Set: l.active(), Shared: l.setText(l.sharedPath()), Agents: slices.Clone(l.Instructions.Agents), Extra: extras(), Markers: l.Instructions.Markers},
 		MCP:          map[string][]string{},
 		Skills:       map[string][]string{},
 	}
@@ -154,7 +155,7 @@ func Holds(s *Setup) bool {
 	if l.hasSet(s.Instructions.Set) && l.active() != s.Instructions.Set {
 		return false
 	}
-	if setText(l.sharedPath()) != strings.TrimSpace(s.Instructions.Shared) {
+	if l.Instructions.Markers.effective() != s.Instructions.Markers.effective() || l.setText(l.sharedPath()) != strings.TrimSpace(s.Instructions.Shared) {
 		return false
 	}
 	for id, text := range extras() {
@@ -194,8 +195,23 @@ func Holds(s *Setup) bool {
 // instructions files that change are kept aside with the agents' files,
 // in the same backup.
 func Restore(s *Setup) (*Result, error) {
+	if err := s.Instructions.Markers.check(); err != nil {
+		return nil, err
+	}
+	m := s.Instructions.Markers.effective()
+	if err := m.checkText(s.Instructions.Shared); err != nil {
+		return nil, err
+	}
+	for _, text := range s.Instructions.Extra {
+		if err := m.checkText(text); err != nil {
+			return nil, err
+		}
+	}
 	var missing []string
 	res, err := change(func(l *Library) error {
+		if err := l.checkMarkerFiles(m, s.Instructions.Agents); err != nil {
+			return err
+		}
 		missing = nil
 		b := newBackups()
 		l.kept = b
@@ -226,6 +242,7 @@ func Restore(s *Setup) (*Result, error) {
 			}
 		}
 		l.Instructions.Agents = slices.Sorted(slices.Values(s.Instructions.Agents))
+		l.Instructions.Markers = s.Instructions.Markers
 		for name, agents := range s.MCP {
 			if x := l.server(name); x != nil {
 				x.Agents = slices.Sorted(slices.Values(agents))

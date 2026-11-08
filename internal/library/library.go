@@ -97,7 +97,8 @@ type Library struct {
 // and what it gets besides (kept in files beside library.json). The shared
 // text is one of several sets kept to switch between (#106), the one on.
 type Instructions struct {
-	Agents []string `json:"agents"` // the agents the shared text is written to
+	Agents  []string            `json:"agents"`            // the agents the shared text is written to
+	Markers *InstructionMarkers `json:"markers,omitempty"` // nil uses the original marker lines
 	// Sets are the named texts to pick the shared one from; with none kept
 	// there is the one magpie always had, "default"
 	Sets   []InstrSet `json:"sets,omitempty"`
@@ -116,10 +117,11 @@ type InstrSet struct {
 
 // Applied is what magpie last wrote into one agent.
 type Applied struct {
-	Instructions bool     `json:"instructions,omitempty"`
-	InstrHash    string   `json:"instrHash,omitempty"` // of the part last written
-	MCP          []string `json:"mcp,omitempty"`
-	Skills       []string `json:"skills,omitempty"`
+	Instructions bool                `json:"instructions,omitempty"`
+	InstrHash    string              `json:"instrHash,omitempty"`    // of the part last written
+	InstrMarkers *InstructionMarkers `json:"instrMarkers,omitempty"` // the marker lines last written here
+	MCP          []string            `json:"mcp,omitempty"`
+	Skills       []string            `json:"skills,omitempty"`
 	// ToolsOff are, for each server, the tools magpie put in the list its
 	// entry has of those the agent leaves out; ToolRules the rules beside
 	// the servers magpie added to leave tools out (Claude Code's deny
@@ -147,7 +149,7 @@ type Applied struct {
 // the library's to give it — makes no record, and a save drops the entry
 // it looked at the agent through (#4247).
 func (a *Applied) empty() bool {
-	return !a.Instructions && a.InstrHash == "" && len(a.MCP) == 0 && len(a.Skills) == 0 &&
+	return !a.Instructions && a.InstrHash == "" && a.InstrMarkers == nil && len(a.MCP) == 0 && len(a.Skills) == 0 &&
 		len(a.ToolsOff) == 0 && len(a.ToolRules) == 0 && len(a.Hooks) == 0 &&
 		len(a.Subagents) == 0 && len(a.Startup) == 0 && len(a.Picked) == 0
 }

@@ -2,6 +2,11 @@
 // kernel adds them to i18n.js's (magpie.strings).
 magpie.strings({
   zh: {
+    "Instruction block markers": "指令块边界标记",
+    "Beginning marker": "起始标记",
+    "Ending marker": "结束标记",
+    "Restore default markers": "恢复默认标记",
+    "Two distinct HTML comment lines surround the shared text and agent additions. Saving replaces the previous markers and keeps text outside the block.": "用两行不同的 HTML 注释包围共享正文和 Agent 补充规则。保存后替换原有标记，保留块外内容。",
     "The MCP router is on: apps can connect at its address": "MCP 路由已打开：应用可以连接它的地址",
     "The MCP router is off": "MCP 路由已关闭",
     "Any app connects at the address below for every server in the library, as server__tool.": "任何应用连接下面的地址，即可使用资源库里的全部服务器，工具名为 server__tool。",
@@ -808,6 +813,11 @@ magpie.strings({
     "{agents} can be changed once it runs.": "{agents} 要等它运行后才能修改。",
   },
   "zh-TW": {
+    "Instruction block markers": "指令區塊邊界標記",
+    "Beginning marker": "起始標記",
+    "Ending marker": "結束標記",
+    "Restore default markers": "還原預設標記",
+    "Two distinct HTML comment lines surround the shared text and agent additions. Saving replaces the previous markers and keeps text outside the block.": "用兩行不同的 HTML 註解包圍共用正文和 Agent 補充規則。儲存後替換原有標記，保留區塊外內容。",
     "The MCP router is on: apps can connect at its address": "MCP 路由已開啟：應用程式可以連線到它的位址",
     "The MCP router is off": "MCP 路由已關閉",
     "Any app connects at the address below for every server in the library, as server__tool.": "任何應用程式連線下面的位址，即可使用資源庫裡的全部伺服器，工具名稱為 server__tool。",
@@ -1614,6 +1624,11 @@ magpie.strings({
     "{agents} can be changed once it runs.": "{agents} 要等它執行後才能修改。",
   },
   ja: {
+    "Instruction block markers": "指示ブロックの境界マーカー",
+    "Beginning marker": "開始マーカー",
+    "Ending marker": "終了マーカー",
+    "Restore default markers": "既定のマーカーに戻す",
+    "Two distinct HTML comment lines surround the shared text and agent additions. Saving replaces the previous markers and keeps text outside the block.": "異なる 2 行の HTML コメントで共有テキストと Agent の追加指示を囲みます。保存すると既存のマーカーを置き換え、ブロック外の内容を保持します。",
     "The MCP router is on: apps can connect at its address": "MCP ルーターをオンにしました：アプリはそのアドレスに接続できます",
     "The MCP router is off": "MCP ルーターをオフにしました",
     "Any app connects at the address below for every server in the library, as server__tool.": "どのアプリも下のアドレスに接続すると、ライブラリのすべてのサーバーを server__tool として使えます。",
@@ -2420,6 +2435,11 @@ magpie.strings({
     "{agents} can be changed once it runs.": "{agents} は起動後に変更できます。",
   },
   de: {
+    "Instruction block markers": "Begrenzungen des Anweisungsblocks",
+    "Beginning marker": "Anfangsmarkierung",
+    "Ending marker": "Endmarkierung",
+    "Restore default markers": "Standardmarkierungen wiederherstellen",
+    "Two distinct HTML comment lines surround the shared text and agent additions. Saving replaces the previous markers and keeps text outside the block.": "Zwei unterschiedliche HTML-Kommentarzeilen umschließen den gemeinsamen Text und Agent-Ergänzungen. Beim Speichern werden bisherige Markierungen ersetzt und Inhalte außerhalb des Blocks beibehalten.",
     "The MCP router is on: apps can connect at its address": "Der MCP-Router ist an: Apps verbinden sich mit seiner Adresse",
     "The MCP router is off": "Der MCP-Router ist aus",
     "Any app connects at the address below for every server in the library, as server__tool.": "Jede App verbindet sich mit der Adresse unten und erreicht jeden Server der Bibliothek, als server__tool.",

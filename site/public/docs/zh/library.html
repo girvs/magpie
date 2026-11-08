@@ -118,6 +118,7 @@ magpie library sync     # 重新写进各个 Agent</pre>
 &lt;!-- magpie:end --&gt;</pre>
     </div>
     <p>标记以外的内容都是你的，magpie 从不修改。你可以有多组命名的指令，各自给不同的 Agent；一组指令也可以放在你自己的文件里。</p>
+    <p>在「共享指令」中编辑正文，展开某个 Agent 可添加它的专属补充规则。在「指令块边界标记」中可修改起始、结束标记；两者须为不同的单行 HTML 注释，每行最多 512 字节。正文不能包含这两行标记。点击「保存」或按 Ctrl+S 后，magpie 会替换原有边界并保留块外内容；只改标记时，块内手工编辑的正文也会保留。「恢复默认标记」可还原上面的格式，保存后生效。</p>
     <div class="table-wrap"><table>
       <tr><th>Agent</th><th>文件</th></tr>
       <tr><td>Claude Code</td><td><code>~/.claude/CLAUDE.md</code></td></tr>

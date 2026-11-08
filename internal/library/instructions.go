@@ -114,14 +114,6 @@ func extraPath(agent string) string {
 	return filepath.Join(Dir(), "instructions", fileName(agent)+".md")
 }
 
-// setText is a set's text as kept at p. Magpie's part is left out of it:
-// that part is what magpie wrote from the set, never the set. A set kept in
-// the file an agent reads (instructions.md linked to ~/.claude/CLAUDE.md, or
-// both linked to one file of the user's, #2349) has one, and read with it
-// every write put the whole file into its own part again, so the file
-// doubled at each one, to gigabytes.
-func setText(p string) string { return own(readText(p)) }
-
 // isSetFile reports whether p, links followed, is the file the agents' set
 // is kept in.
 func (l *Library) isSetFile(p string) bool {
@@ -151,7 +143,7 @@ func (l *Library) wanted(agent string) string {
 		return ""
 	}
 	parts := []string{}
-	for _, s := range []string{setText(l.sharedPath()), readText(extraPath(agent))} {
+	for _, s := range []string{l.setText(l.sharedPath()), readText(extraPath(agent))} {
 		if s != "" {
 			parts = append(parts, s)
 		}
@@ -161,36 +153,44 @@ func (l *Library) wanted(agent string) string {
 
 // split takes a file apart: what is before magpie's part, magpie's part,
 // and what is after it. ok is false when magpie has no part in it.
-func split(file string) (before, block, after string, ok bool) {
-	i := strings.Index(file, blockBegin)
-	if i < 0 {
-		return file, "", "", false
+func split(file string, markers ...InstructionMarkers) (before, block, after string, ok bool) {
+	first := len(file)
+	before = file
+	for _, m := range markerPairs(markers) {
+		i := strings.Index(file, m.Begin)
+		if i < 0 || i >= first {
+			continue
+		}
+		rest := file[i+len(m.Begin):]
+		j := strings.Index(rest, m.End)
+		if j < 0 {
+			continue
+		}
+		first = i
+		before, block, after, ok = file[:i], strings.TrimSpace(rest[:j]), rest[j+len(m.End):], true
 	}
-	rest := file[i+len(blockBegin):]
-	j := strings.Index(rest, blockEnd)
-	if j < 0 {
-		return file, "", "", false
-	}
-	return file[:i], strings.TrimSpace(rest[:j]), rest[j+len(blockEnd):], true
+	return
 }
 
 // own is the file without magpie's part: the user's own instructions.
 // Every part goes, and an end line left over: a part written into itself
 // (#2349) holds others, each ended after the first end.
-func own(file string) string {
+func own(file string, markers ...InstructionMarkers) string {
 	for {
-		before, _, after, ok := split(file)
+		before, _, after, ok := split(file, markers...)
 		if !ok {
 			break
 		}
 		file = strings.TrimSpace(before) + "\n\n" + strings.TrimSpace(after)
 	}
-	if strings.Contains(file, blockEnd) {
-		lines := strings.Split(file, "\n")
-		lines = slices.DeleteFunc(lines, func(s string) bool { return strings.TrimSpace(s) == blockEnd })
-		file = strings.Join(lines, "\n")
-		for strings.Contains(file, "\n\n\n") {
-			file = strings.ReplaceAll(file, "\n\n\n", "\n\n")
+	for _, m := range markerPairs(markers) {
+		if strings.Contains(file, m.End) {
+			lines := strings.Split(file, "\n")
+			lines = slices.DeleteFunc(lines, func(s string) bool { return strings.TrimSpace(s) == m.End })
+			file = strings.Join(lines, "\n")
+			for strings.Contains(file, "\n\n\n") {
+				file = strings.ReplaceAll(file, "\n\n\n", "\n\n")
+			}
 		}
 	}
 	return strings.TrimSpace(file)
@@ -198,14 +198,21 @@ func own(file string) string {
 
 // withBlock is the file with magpie's part set to text, or taken out for "".
 // A new part goes after what the user has written.
-func withBlock(file, text string) string {
-	file = strings.ReplaceAll(file, "\r\n", "\n")
-	before, _, after, ok := split(file)
-	before, after = strings.TrimRight(before, "\n"), strings.TrimLeft(after, "\n")
+func withBlock(file, text string, markers ...InstructionMarkers) string {
+	markers = markerPairs(markers)
 	block := ""
 	if text != "" {
-		block = blockBegin + "\n" + text + "\n" + blockEnd
+		block = markers[0].Begin + "\n" + text + "\n" + markers[0].End
 	}
+	return replaceBlock(file, block, markers...)
+}
+
+// replaceBlock accepts a whole block, including an intentionally empty one
+// whose marker lines preserve a user's edit. An empty block string removes it.
+func replaceBlock(file, block string, markers ...InstructionMarkers) string {
+	file = strings.ReplaceAll(file, "\r\n", "\n")
+	before, _, after, ok := split(file, markers...)
+	before, after = strings.TrimRight(before, "\n"), strings.TrimLeft(after, "\n")
 	if !ok {
 		before, after = strings.TrimRight(file, "\n"), ""
 	}
@@ -245,19 +252,23 @@ func (l *Library) syncInstructions(t *Target, b *backups, res *Result) {
 		return
 	}
 	file := string(raw)
+	previous := l.previousMarkers(id)
+	written := l.Instructions.Markers.effective()
+	markers := append([]InstructionMarkers{written}, previous...)
+	sameMarkers := a.InstrMarkers.effective() == written
 	if l.isSetFile(t.Instructions) {
 		// the agent reads the set's own file, so it has the text already:
 		// magpie writes no part into it, and takes out one written before
-		a.Instructions, a.InstrHash = false, ""
 		file = strings.ReplaceAll(file, "\r\n", "\n")
-		if !strings.Contains(file, blockBegin) && !strings.Contains(file, blockEnd) {
+		if own(file, previous...) == strings.TrimSpace(file) {
+			a.Instructions, a.InstrHash, a.InstrMarkers = false, "", nil
 			return
 		}
 		if err := b.keep(id, t.Instructions); err != nil {
 			res.fail(id, "instructions", err)
 			return
 		}
-		next := own(file)
+		next := own(file, previous...)
 		if next != "" {
 			next += "\n"
 		}
@@ -265,27 +276,51 @@ func (l *Library) syncInstructions(t *Target, b *backups, res *Result) {
 			res.fail(id, "instructions", err)
 			return
 		}
+		a.Instructions, a.InstrHash, a.InstrMarkers = false, "", nil
 		res.changed(id)
 		return
 	}
-	_, have, _, ok := split(file)
+	_, have, _, ok := split(file, previous...)
+	preserveEmpty := false
+	if want != "" {
+		if err := l.checkPersonalMarkers(id, file, written); err != nil {
+			res.fail(id, "instructions", err)
+			return
+		}
+	}
 	if want == "" && !ok {
 		a.Instructions, a.InstrHash = false, ""
+		a.InstrMarkers = nil
 		return
 	}
-	if ok && have == want {
+	if ok && have == want && sameMarkers && want != "" {
 		a.Instructions, a.InstrHash = want != "", hash(want)
 		return
 	}
 	if ok && want != "" && a.InstrHash != "" && hash(have) != a.InstrHash && hash(want) == a.InstrHash {
-		return // edited in the file since, and the library hasn't changed for it
+		if sameMarkers {
+			return // edited in the file since, and the library hasn't changed for it
+		}
+		// Changing only the markers preserves edits made in the agent's file.
+		want = have
+		preserveEmpty = have == ""
 	}
-	next := withBlock(file, want)
+	if err := written.checkText(want); err != nil {
+		res.fail(id, "instructions", err)
+		return
+	}
+	if want == "" && !preserveEmpty {
+		markers = previous
+	}
+	next := withBlock(file, want, markers...)
+	if preserveEmpty {
+		next = replaceBlock(file, written.Begin+"\n"+written.End, markers...)
+	}
 	if err := b.keep(id, t.Instructions); err != nil {
 		res.fail(id, "instructions", err)
 		return
 	}
-	if strings.TrimSpace(next) == "" && len(raw) > 0 && own(file) == "" {
+	if strings.TrimSpace(next) == "" && len(raw) > 0 && own(file, markers...) == "" {
 		err = edit.Remove(t.Instructions)
 	} else if next != "" {
 		err = edit.WriteAtomic(t.Instructions, []byte(next))
@@ -294,7 +329,11 @@ func (l *Library) syncInstructions(t *Target, b *backups, res *Result) {
 		res.fail(id, "instructions", err)
 		return
 	}
-	a.Instructions, a.InstrHash = want != "", hash(want)
+	a.Instructions, a.InstrHash = l.wanted(id) != "", hash(l.wanted(id))
+	a.InstrMarkers = nil
+	if a.Instructions && written != defaultMarkers() {
+		a.InstrMarkers = &written
+	}
 	res.changed(id)
 }
 
@@ -320,9 +359,10 @@ type AgentInstructions struct {
 
 // InstructionsView is the Instructions page.
 type InstructionsView struct {
-	Shared string              `json:"shared"` // the set on's text
-	Sets   []SetView           `json:"sets"`
-	Agents []AgentInstructions `json:"agents"`
+	Markers InstructionMarkers  `json:"markers"`
+	Shared  string              `json:"shared"` // the set on's text
+	Sets    []SetView           `json:"sets"`
+	Agents  []AgentInstructions `json:"agents"`
 }
 
 // SetView is one set of shared instructions as the page shows it.
@@ -350,9 +390,9 @@ func ReadInstructions() (*InstructionsView, error) {
 // through every agent's folders, in WSL too, which one read of the Library
 // did three times over (#1624).
 func (l *Library) instructionsView(targets []*Target, asleep []*agent.Agent) *InstructionsView {
-	v := &InstructionsView{Shared: setText(l.sharedPath()), Agents: []AgentInstructions{}}
+	v := &InstructionsView{Shared: l.setText(l.sharedPath()), Markers: l.Instructions.Markers.effective(), Agents: []AgentInstructions{}}
 	for _, s := range l.sets() {
-		v.Sets = append(v.Sets, SetView{ID: s.ID, Name: s.Name, Text: setText(l.textPath(s.ID)), Active: s.ID == l.active(), File: s.File})
+		v.Sets = append(v.Sets, SetView{ID: s.ID, Name: s.Name, Text: l.setText(l.textPath(s.ID)), Active: s.ID == l.active(), File: s.File})
 	}
 	for _, t := range targets {
 		if t.Instructions == "" {
@@ -362,10 +402,10 @@ func (l *Library) instructionsView(targets []*Target, asleep []*agent.Agent) *In
 		ai := AgentInstructions{Agent: id, Name: t.Agent.Name, Icon: t.Agent.Icon, Path: t.Instructions,
 			On: slices.Contains(l.Instructions.Agents, id), Extra: readText(extraPath(id)), Profile: t.Profile}
 		file := readText(t.Instructions)
-		if o := own(file); o != "" {
+		if o := own(file, l.previousMarkers(id)...); o != "" {
 			ai.Own = strings.Count(o, "\n") + 1
 		}
-		if _, have, _, ok := split(file); ok && have != l.wanted(id) && !l.isSetFile(t.Instructions) {
+		if _, have, _, ok := split(file, l.previousMarkers(id)...); ok && have != l.wanted(id) && !l.isSetFile(t.Instructions) {
 			ai.Edited = true
 		}
 		if t.Override != "" && readText(t.Override) != "" {
@@ -386,9 +426,10 @@ func (l *Library) instructionsView(targets []*Target, asleep []*agent.Agent) *In
 // InstructionsChange is what the page saves: the shared text, which agents
 // get it, and what each gets besides. A nil field is left as it is.
 type InstructionsChange struct {
-	Shared *string            `json:"shared,omitempty"`
-	Agents []string           `json:"agents,omitempty"`
-	Extra  map[string]*string `json:"extra,omitempty"`
+	Markers *InstructionMarkers `json:"markers,omitempty"`
+	Shared  *string             `json:"shared,omitempty"`
+	Agents  []string            `json:"agents,omitempty"`
+	Extra   map[string]*string  `json:"extra,omitempty"`
 	// Rewrite writes magpie's part again into these agents' files, over
 	// edits made there.
 	Rewrite []string `json:"rewrite,omitempty"`
@@ -437,7 +478,20 @@ func changeInstructions(f func(l *Library) error) (*Result, error) {
 
 // SaveInstructions saves the change and writes it into the agents.
 func SaveInstructions(c InstructionsChange) (*Result, error) {
+	if err := c.Markers.check(); err != nil {
+		return nil, err
+	}
 	return changeInstructions(func(l *Library) error {
+		if err := l.checkMarkerChange(c); err != nil {
+			return err
+		}
+		if c.Markers != nil {
+			m := c.Markers.effective()
+			l.Instructions.Markers = nil
+			if m != defaultMarkers() {
+				l.Instructions.Markers = &m
+			}
+		}
 		if err := l.changeSets(c); err != nil {
 			return err
 		}
@@ -490,13 +544,16 @@ func ImportInstructions(id string) (*Result, error) {
 			return err
 		}
 		file := strings.ReplaceAll(string(raw), "\r\n", "\n")
-		mine := own(file)
+		mine := own(file, l.previousMarkers(id)...)
 		if mine == "" {
 			return fmt.Errorf("%s has nothing of its own to import", t.Instructions)
 		}
-		shared := setText(l.sharedPath())
+		shared := l.setText(l.sharedPath())
 		if !strings.Contains(shared, mine) {
 			shared = strings.TrimSpace(shared + "\n\n" + mine)
+		}
+		if err := l.Instructions.Markers.effective().checkText(shared); err != nil {
+			return err
 		}
 		if err := l.putText(l.sharedPath(), shared); err != nil {
 			return err
@@ -505,10 +562,10 @@ func ImportInstructions(id string) (*Result, error) {
 		if err := b.keep(id, t.Instructions); err != nil {
 			return err
 		}
-		_, block, _, ok := split(file)
+		_, block, _, ok := split(file, l.previousMarkers(id)...)
 		next := ""
 		if ok {
-			next = withBlock("", block)
+			next = withBlock("", block, l.previousMarkers(id)...)
 		}
 		if next == "" {
 			err = edit.Remove(t.Instructions)
@@ -586,7 +643,7 @@ func (l *Library) changeSets(c InstructionsChange) error {
 	// an empty set in use gives the agents nothing, so a set added, or one
 	// given text, is the one they read from then on (Fate on Discord: a new
 	// set was written into no agent while the Default set read was empty)
-	if c.Activate == "" && c.Shared == nil && setText(l.sharedPath()) == "" {
+	if c.Activate == "" && c.Shared == nil && l.setText(l.sharedPath()) == "" {
 		if x := c.Create; x != nil {
 			l.Instructions.Active = x.ID
 		}
@@ -633,7 +690,7 @@ func (l *Library) linkable(file string) (string, error) {
 	if st, err := os.Stat(file); err == nil && st.IsDir() {
 		return "", fmt.Errorf("%s is a folder: give a file", file)
 	}
-	if strings.Contains(readText(file), blockBegin) {
+	if l.hasInstructionMarker(readText(file)) {
 		return "", fmt.Errorf("magpie writes its instructions into %s: a set can't be kept there too", file)
 	}
 	if lib := realBelow(Dir()); real == lib || strings.HasPrefix(real, lib+string(filepath.Separator)) || real == realBelow(path()) {
